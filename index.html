@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crushly – Schul-Crush-Matching</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%234f46e5'/><text x='32' y='43' font-family='Arial,sans-serif' font-size='32' font-weight='700' fill='%23fff' text-anchor='middle'>C</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Tailwind CSS via CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      },
+    },
+  };
+</script>
+<!-- Offizielles Supabase JavaScript SDK via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Wiederverwendbare Klassen (Tailwind-Play-CDN) -->
+<style type="text/tailwindcss">
+  .label    { @apply block text-sm font-medium text-slate-700 mb-1.5; }
+  .input    { @apply w-full rounded-lg border-0 ring-1 ring-slate-300 bg-white px-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white shadow-sm hover:bg-indigo-700 transition disabled:opacity-60 disabled:cursor-not-allowed; }
+  .btn-ghost   { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-semibold ring-1 ring-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition disabled:opacity-60 disabled:cursor-not-allowed; }
+  .badge-ok    { @apply inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 px-2.5 py-1 text-xs font-semibold; }
+  .badge-off   { @apply inline-flex items-center rounded-full bg-slate-100 text-slate-500 ring-1 ring-slate-200 px-2.5 py-1 text-xs font-semibold; }
+</style>
+
+<!-- Eigenes CSS für Animationen -->
+<style>
+  .tab-btn { transition: all .15s ease; color: #64748b; font-weight: 500; }
+  .tab-btn.tab-active { background: #fff; color: #4338ca; font-weight: 600; box-shadow: 0 1px 2px 0 rgb(0 0 0 / .06); }
+
+  @keyframes popIn {
+    0%   { transform: scale(.97); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .pop-in { animation: popIn .35s ease-out both; }
+
+  #crush-suggestions::-webkit-scrollbar { width: 6px; }
+  #crush-suggestions::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+</style>
+</head>
+
+<body class="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased">
+
+<!-- Hinweis, wenn Supabase noch nicht konfiguriert ist -->
+<div id="setup-notice" class="hidden mx-auto max-w-2xl mt-6 rounded-xl bg-amber-50 ring-1 ring-amber-300 px-5 py-4 text-amber-900 text-sm font-medium">
+  <p class="font-bold text-base mb-1">Supabase ist noch nicht konfiguriert</p>
+  <p>Öffne die <code class="bg-amber-100 px-1 rounded">index.html</code> und trage ganz oben im Script-Bereich deine
+  <code class="bg-amber-100 px-1 rounded">SUPABASE_URL</code> und deinen
+  <code class="bg-amber-100 px-1 rounded">SUPABASE_ANON_KEY</code> aus dem Supabase-Dashboard ein
+  (Project Settings → API). Die genaue Anleitung steht in der <code class="bg-amber-100 px-1 rounded">ANLEITUNG.md</code>.</p>
+</div>
+
+<!-- ======================= AUTHENTIFIZIERUNG ======================= -->
+<main id="auth-view" class="hidden items-center justify-center px-4 py-10 min-h-screen">
+  <div class="w-full max-w-md">
+
+    <div class="text-center mb-8">
+      <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white font-bold text-xl select-none">C</div>
+      <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Crushly</h1>
+      <p class="mt-2 text-slate-500 font-medium">Schul-Crush-Matching</p>
+      <p class="mt-1 text-slate-400 text-sm leading-relaxed">Gib diskret an, wen du magst – beide erfahren es nur bei gegenseitigem Interesse.</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6 sm:p-8">
+
+      <!-- Tabs: Registrieren / Anmelden -->
+      <div class="grid grid-cols-2 gap-1 p-1 mb-6 bg-slate-100 rounded-xl" role="tablist">
+        <button id="tab-register" type="button" role="tab" aria-selected="true"  class="tab-btn tab-active rounded-lg py-2 text-sm">Registrieren</button>
+        <button id="tab-login"    type="button" role="tab" aria-selected="false" class="tab-btn rounded-lg py-2 text-sm">Anmelden</button>
+      </div>
+
+      <!-- Formular: Registrieren -->
+      <form id="register-form" class="space-y-4" novalidate>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="reg-first" class="label">Vorname</label>
+            <input id="reg-first" type="text" maxlength="40" autocomplete="given-name" class="input" placeholder="Max">
+          </div>
+          <div>
+            <label for="reg-last" class="label">Nachname</label>
+            <input id="reg-last" type="text" maxlength="40" autocomplete="family-name" class="input" placeholder="Mustermann">
+          </div>
+        </div>
+        <div>
+          <label for="reg-password" class="label">Passwort</label>
+          <input id="reg-password" type="password" maxlength="72" autocomplete="new-password" class="input" placeholder="mindestens 6 Zeichen">
+        </div>
+        <div>
+          <label for="reg-password2" class="label">Passwort wiederholen</label>
+          <input id="reg-password2" type="password" maxlength="72" autocomplete="new-password" class="input" placeholder="Passwort wiederholen">
+        </div>
+        <p id="register-error" class="hidden text-sm font-medium text-red-600 bg-red-50 ring-1 ring-red-100 rounded-lg px-3 py-2"></p>
+        <button id="register-btn" type="submit" class="btn-primary w-full">Account erstellen</button>
+        <p class="text-xs text-slate-400 text-center leading-relaxed">Keine E-Mail-Adresse nötig – Vorname, Nachname und Passwort genügen.</p>
+      </form>
+
+      <!-- Formular: Anmelden -->
+      <form id="login-form" class="hidden space-y-4" novalidate>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="login-first" class="label">Vorname</label>
+            <input id="login-first" type="text" maxlength="40" autocomplete="given-name" class="input" placeholder="Max">
+          </div>
+          <div>
+            <label for="login-last" class="label">Nachname</label>
+            <input id="login-last" type="text" maxlength="40" autocomplete="family-name" class="input" placeholder="Mustermann">
+          </div>
+        </div>
+        <div>
+          <label for="login-password" class="label">Passwort</label>
+          <input id="login-password" type="password" maxlength="72" autocomplete="current-password" class="input" placeholder="dein Passwort">
+        </div>
+        <p id="login-error" class="hidden text-sm font-medium text-red-600 bg-red-50 ring-1 ring-red-100 rounded-lg px-3 py-2"></p>
+        <button id="login-btn" type="submit" class="btn-primary w-full">Anmelden</button>
+      </form>
+    </div>
+
+    <p class="text-center text-xs text-slate-400 mt-6 max-w-xs mx-auto leading-relaxed">Deine Auswahl ist privat: Niemand kann fremde Einträge einsehen – der Abgleich läuft ausschließlich serverseitig über Supabase.</p>
+  </div>
+</main>
+
+<!-- ======================= DASHBOARD ======================= -->
+<main id="app-view" class="hidden min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-8 sm:py-10">
+
+    <!-- Kopfzeile -->
+    <header class="flex items-center justify-between gap-3 mb-8">
+      <div class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white font-bold text-sm select-none">C</span>
+        <span class="font-bold text-slate-900 tracking-tight">Crushly</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="hidden sm:inline-flex items-center gap-2 rounded-full bg-white ring-1 ring-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600">
+          <svg class="h-4 w-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="user-chip" class="max-w-[12rem] truncate">…</span>
+        </span>
+        <button id="logout-btn" type="button" class="btn-ghost !py-1.5">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          Abmelden
+        </button>
+      </div>
+    </header>
+
+    <!-- Begrüßung -->
+    <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Hallo, <span id="greeting-name">…</span></h1>
+    <p class="mt-1.5 text-slate-500">Gib an, wen du magst – deine Auswahl bleibt privat.</p>
+
+    <!-- MATCH-BANNER (nur bei gegenseitigem Match sichtbar) -->
+    <div id="match-banner" class="hidden pop-in mt-6 rounded-2xl bg-indigo-600 p-6 sm:p-7 text-white shadow-sm">
+      <div class="flex items-start gap-4">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="min-w-0">
+          <p class="font-bold text-xl sm:text-2xl tracking-tight">Es ist ein Match</p>
+          <p class="mt-1.5 text-indigo-100 leading-relaxed">
+            Du und <span id="match-name" class="font-semibold text-white underline decoration-white/40 decoration-2 underline-offset-4"></span>
+            habt euch gegenseitig ausgewählt.
+          </p>
+          <p id="match-since" class="mt-2 text-indigo-200 text-sm"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- CRUSH-KARTE -->
+    <section class="mt-6 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6 sm:p-8">
+      <h2 class="text-lg font-bold text-slate-900">Wen magst du?</h2>
+      <p class="text-sm text-slate-400 mt-0.5">Deine Auswahl bleibt geheim – nur bei gegenseitigem Match gibt es eine Benachrichtigung.</p>
+
+      <!-- Aktuelle Auswahl (Statusanzeige) -->
+      <div id="crush-status-area" class="hidden mt-5">
+        <div class="flex items-center gap-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-4 py-4">
+          <span id="crush-status-initial" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white font-semibold text-base">?</span>
+          <div class="min-w-0 flex-1">
+            <p id="crush-status-name" class="font-semibold text-slate-900 text-lg truncate"></p>
+            <p id="crush-status-date" class="text-xs text-slate-400 mt-0.5"></p>
+          </div>
+          <span id="crush-status-badge" class="badge-ok shrink-0">Bereits registriert</span>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button id="crush-change-btn" type="button" class="btn-ghost">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+            Ändern
+          </button>
+          <button id="crush-delete-btn" type="button" class="btn-ghost !text-red-600 hover:!bg-red-50 !ring-red-200">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            Löschen
+          </button>
+        </div>
+        <p id="crush-wait-hint" class="mt-4 text-sm text-slate-500 bg-slate-50 rounded-xl px-4 py-3 leading-relaxed"></p>
+      </div>
+
+      <!-- Eingabe mit Live-Suche (Autocomplete) -->
+      <div id="crush-form-area" class="mt-5">
+        <label for="crush-input" class="label">Vor- und Nachname der Person</label>
+        <div class="relative">
+          <input id="crush-input" type="text" maxlength="60" autocomplete="off" spellcheck="false"
+                 placeholder="z. B. Alex Beispiel" class="input !pr-11">
+          <span class="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-400" aria-hidden="true">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <ul id="crush-suggestions" role="listbox"
+              class="hidden absolute z-20 mt-2 w-full max-h-72 overflow-auto rounded-xl bg-white py-1.5 shadow-lg ring-1 ring-slate-200"></ul>
+        </div>
+        <p class="mt-2 text-xs text-slate-400 leading-relaxed">
+          Tipp: Bereits registrierte Mitschüler erscheinen beim Tippen und lassen sich direkt auswählen.
+          Person noch nicht dabei? Namen einfach eintippen und speichern.
+        </p>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button id="crush-save-btn" type="button" class="btn-primary">Auswahl speichern</button>
+          <button id="crush-cancel-btn" type="button" class="btn-ghost hidden">Abbrechen</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACCOUNT-KARTE -->
+    <section class="mt-4 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6 sm:p-8">
+      <h2 class="text-lg font-bold text-slate-900">Account</h2>
+      <p class="text-sm text-slate-400 mt-0.5">Passwort ändern oder deinen Account vollständig entfernen.</p>
+
+      <!-- Passwort ändern -->
+      <div class="mt-5 rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4 sm:p-5">
+        <h3 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+          <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Passwort ändern
+        </h3>
+        <div class="mt-4 grid sm:grid-cols-2 gap-3">
+          <div>
+            <label for="pw-new" class="label">Neues Passwort</label>
+            <input id="pw-new" type="password" maxlength="72" autocomplete="new-password" class="input" placeholder="mindestens 6 Zeichen">
+          </div>
+          <div>
+            <label for="pw-new2" class="label">Neues Passwort wiederholen</label>
+            <input id="pw-new2" type="password" maxlength="72" autocomplete="new-password" class="input" placeholder="Passwort wiederholen">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button id="pw-save-btn" type="button" class="btn-primary">Passwort ändern</button>
+        </div>
+      </div>
+
+      <!-- Account löschen -->
+      <div class="mt-4 rounded-xl bg-red-50/60 ring-1 ring-red-200 p-4 sm:p-5">
+        <h3 class="text-sm font-semibold text-red-800 flex items-center gap-2">
+          <svg class="h-4 w-4 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          Account löschen
+        </h3>
+        <p class="mt-2 text-sm text-red-800/80 leading-relaxed">
+          Entfernt dein Profil, deine Crush-Auswahl und deinen Login dauerhaft. Die Aktion lässt sich nicht rückgängig machen.
+        </p>
+        <div class="mt-4">
+          <button id="account-delete-btn" type="button" class="btn-ghost !text-red-700 hover:!bg-red-100 !ring-red-300">Account endgültig löschen …</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Datenschutz-Hinweis -->
+    <p class="mt-6 text-center text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+      Deine Auswahl ist nur für dich sichtbar. Der Abgleich erfolgt über eine gesicherte Server-Funktion
+      mit Row Level Security – niemand kann die Einträge anderer auslesen.
+    </p>
+  </div>
+</main>
+
+<!-- Modal: Account löschen (Bestätigung) -->
+<div id="delete-modal" class="hidden fixed inset-0 z-[90] items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+  <div id="delete-modal-backdrop" class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"></div>
+  <div class="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-slate-200 p-6 sm:p-7 pop-in">
+    <div class="flex items-start gap-3">
+      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+      </span>
+      <div class="min-w-0">
+        <h3 id="delete-modal-title" class="text-lg font-bold text-slate-900">Account wirklich löschen?</h3>
+        <p class="mt-1 text-sm text-slate-500 leading-relaxed">Dein Profil, deine Crush-Auswahl und dein Login werden dauerhaft entfernt. Dies lässt sich <span class="font-semibold text-slate-700">nicht rückgängig</span> machen.</p>
+      </div>
+    </div>
+    <div class="mt-5">
+      <label for="delete-confirm-input" class="label">Tippe <span class="font-bold tracking-wide text-slate-800">LÖSCHEN</span>, um zu bestätigen</label>
+      <input id="delete-confirm-input" type="text" maxlength="10" autocomplete="off" class="input" placeholder="LÖSCHEN">
+    </div>
+    <div class="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+      <button id="delete-cancel-btn" type="button" class="btn-ghost">Abbrechen</button>
+      <button id="delete-confirm-btn" type="button" class="btn-primary !bg-red-600 hover:!bg-red-700">Endgültig löschen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div id="toast-container" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[80] flex flex-col items-center gap-2 w-full px-4 pointer-events-none"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ================================================================
+     Konfiguration – Supabase-Projekt (Project Settings → API)
+     Der Publishable Key (wie der frühere anon Key) ist dafür
+     gemacht, öffentlich im Frontend zu liegen; die Sicherheit
+     kommt aus den RLS-Policies (siehe supabase-setup.sql).
+     ================================================================ */
+  const SUPABASE_URL = 'https://wpwgzrdpqkrieujfublz.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_G_Y0I1aqe-Vt-tV7-_6v1A_1Q7XEm0K';
+
+  /* ---------- DOM-Helfer ---------- */
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  let sb = null; // Supabase-Client
+
+  const state = {
+    user: null,          // auth.users-Eintrag des eingeloggten Nutzers
+    profile: null,       // zugehöriger Eintrag aus `profiles`
+    crush: null,         // eigener Eintrag aus `crushes` (oder null)
+    crushProfile: null,  // Profil-Eintrag des Crushes, falls diese Person registriert ist
+    match: null,         // Ergebnis von get_my_match() (oder null)
+    editing: false,      // "Ändern"-Modus aktiv?
+    selectedProfile: null, // aus der Vorschlagsliste gewähltes Profil
+    suggestions: [],
+    highlightIdx: -1,
+    debounceTimer: null,
+    pollTimer: null,
+  };
+
+  /* ---------- Namens- & E-Mail-Helfer ---------- */
+
+  // Normalisierung wie in SQL: Kleinbuchstaben, überflüssige Leerzeichen entfernt
+  const normalizeName = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Aus einem Namen einen e-mail-tauglichen Teil bauen (ä→ae, ö→oe, ü→ue, ß→ss …)
+  function emailLocalPart(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '.')
+      .replace(/[^a-z0-9.-]/g, '')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[.-]+|[.-]+$/g, '');
+  }
+
+  // Dummy-E-Mail für Supabase Auth: vorname.nachname@schule.local
+  const emailFor = (first, last) => {
+    const local = [emailLocalPart(first), emailLocalPart(last)].filter(Boolean).join('.');
+    return (local || 'schueler') + '@schule.local';
+  };
+
+  const firstNameOf = (fullName) => String(fullName || '').trim().split(/\s+/)[0] || '';
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const fmtDateLong = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  /* ---------- UI-Helfer ---------- */
+
+  function showView(name) {
+    const auth = $('auth-view');
+    const app = $('app-view');
+    const showAuth = name === 'auth';
+    auth.classList.toggle('hidden', !showAuth);
+    auth.classList.toggle('flex', showAuth);
+    app.classList.toggle('hidden', showAuth);
+    window.scrollTo(0, 0);
+  }
+
+  function setFormError(which, msg) {
+    const el = $(which + '-error');
+    el.textContent = msg || '';
+    el.classList.toggle('hidden', !msg);
+  }
+
+  function setLoading(btn, on, busyText) {
+    if (on) {
+      btn.dataset.label = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">'
+        + '<circle class="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>'
+        + '<path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"/></svg>'
+        + '<span>' + esc(busyText || 'Bitte warten …') + '</span>';
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.label) btn.innerHTML = btn.dataset.label;
+    }
+  }
+
+  function toast(msg, type) {
+    const el = document.createElement('div');
+    el.className = 'pointer-events-auto max-w-sm w-full text-center rounded-xl px-4 py-3 text-sm font-semibold shadow-lg '
+      + (type === 'error' ? 'bg-red-600 text-white'
+        : type === 'success' ? 'bg-emerald-600 text-white'
+        : 'bg-slate-900 text-white');
+    el.setAttribute('role', 'status');
+    el.textContent = msg;
+    $('toast-container').appendChild(el);
+    setTimeout(() => {
+      el.style.transition = 'opacity .4s, transform .4s';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(8px)';
+    }, 3200);
+    setTimeout(() => el.remove(), 3700);
+  }
+
+  function friendlyError(err) {
+    const msg = (err && (err.message || err.error_description || err.msg)) || '';
+    if (/fetch|network|load failed/i.test(msg)) {
+      return 'Keine Verbindung zu Supabase. Prüfe Internet und Konfiguration (SUPABASE_URL / ANON_KEY).';
+    }
+    return 'Ein Fehler ist aufgetreten' + (msg ? ': ' + msg : '.');
+  }
+
+  /* ================= Authentifizierung ================= */
+
+  async function handleRegister(e) {
+    e.preventDefault();
+    setFormError('register', '');
+    const first = $('reg-first').value.trim();
+    const last = $('reg-last').value.trim();
+    const pw = $('reg-password').value;
+    const pw2 = $('reg-password2').value;
+
+    if (first.length < 2 || last.length < 2) return setFormError('register', 'Bitte gib Vor- und Nachnamen an.');
+    if (pw.length < 6) return setFormError('register', 'Das Passwort muss mindestens 6 Zeichen haben.');
+    if (pw !== pw2) return setFormError('register', 'Die Passwörter stimmen nicht überein.');
+
+    const btn = $('register-btn');
+    setLoading(btn, true, 'Account wird erstellt …');
+    try {
+      // 1) Gibt es für diesen Namen schon ein Profil?
+      const norm = normalizeName(first + ' ' + last);
+      const { data: taken } = await sb.from('profiles')
+        .select('id').eq('normalized_name', norm).maybeSingle();
+      if (taken) {
+        return setFormError('register', 'Für diesen Namen gibt es schon einen Account. Versuche, dich anzumelden.');
+      }
+
+      // 2) Account anlegen – E-Mail wird im Hintergrund aus dem Namen erzeugt
+      const { data, error } = await sb.auth.signUp({
+        email: emailFor(first, last),
+        password: pw,
+        options: { data: { first_name: first, last_name: last } },
+      });
+      if (error) {
+        if (/already (registered|exists)/i.test(error.message)) {
+          return setFormError('register', 'Für diesen Namen gibt es schon einen Account. Versuche, dich anzumelden.');
+        }
+        if (/password|characters/i.test(error.message)) {
+          return setFormError('register', 'Das Passwort muss mindestens 6 Zeichen haben.');
+        }
+        return setFormError('register', friendlyError(error));
+      }
+      if (!data.session) {
+        return setFormError('register',
+          'Account angelegt, aber die Anmeldung wartet noch auf eine E-Mail-Bestätigung. '
+          + 'Deaktiviere in Supabase „Confirm email“ (siehe ANLEITUNG.md) und versuche es erneut.');
+      }
+      // Anmeldung aktiv → onAuthStateChange zeigt das Dashboard an
+    } catch (err) {
+      setFormError('register', friendlyError(err));
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    setFormError('login', '');
+    const first = $('login-first').value.trim();
+    const last = $('login-last').value.trim();
+    const pw = $('login-password').value;
+
+    if (first.length < 2 || last.length < 2 || !pw) {
+      return setFormError('login', 'Bitte gib Vorname, Nachname und Passwort ein.');
+    }
+
+    const btn = $('login-btn');
+    setLoading(btn, true, 'Anmelden …');
+    try {
+      const { error } = await sb.auth.signInWithPassword({
+        email: emailFor(first, last),
+        password: pw,
+      });
+      if (error) {
+        return setFormError('login', 'Name oder Passwort ist falsch. Noch keinen Account? Registriere dich zuerst.');
+      }
+    } catch (err) {
+      setFormError('login', friendlyError(err));
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await sb.auth.signOut();
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    }
+  }
+
+  /* ================= Passwort ändern ================= */
+
+  async function handleChangePassword() {
+    const pw = $('pw-new').value;
+    const pw2 = $('pw-new2').value;
+    if (pw.length < 6) { toast('Das neue Passwort muss mindestens 6 Zeichen haben.', 'error'); return; }
+    if (pw !== pw2)  { toast('Die neuen Passwörter stimmen nicht überein.', 'error'); return; }
+
+    const btn = $('pw-save-btn');
+    setLoading(btn, true, 'Speichern …');
+    try {
+      const { error } = await sb.auth.updateUser({ password: pw });
+      if (error) return toast(friendlyError(error), 'error');
+      $('pw-new').value = '';
+      $('pw-new2').value = '';
+      toast('Passwort geändert. Bitte beim nächsten Login das neue Passwort verwenden.', 'success');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  /* ================= Account löschen ================= */
+
+  function openDeleteModal() {
+    const modal = $('delete-modal');
+    $('delete-confirm-input').value = '';
+    $('delete-confirm-btn').disabled = true;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    setTimeout(() => $('delete-confirm-input').focus(), 50);
+  }
+
+  function closeDeleteModal() {
+    const modal = $('delete-modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    $('delete-confirm-input').value = '';
+    $('delete-confirm-btn').disabled = false;
+  }
+
+  async function handleDeleteAccount() {
+    const confirmText = $('delete-confirm-input').value.trim();
+    if (confirmText !== 'LÖSCHEN') {
+      toast('Bitte zur Bestätigung „LÖSCHEN“ eintippen.', 'error');
+      return;
+    }
+
+    const btn = $('delete-confirm-btn');
+    setLoading(btn, true, 'Account wird gelöscht …');
+    try {
+      // Serverseitige Funktion (SECURITY DEFINER) löscht den auth.users-Eintrag.
+      // Profile + Crushes fallen per ON DELETE CASCADE automatisch mit.
+      const { error } = await sb.rpc('delete_own_account');
+      if (error) {
+        toast(friendlyError(error), 'error');
+        return;
+      }
+      // Lokale Sitzung wegwerfen; onAuthStateChange (SIGNED_OUT) räumt das UI auf.
+      closeDeleteModal();
+      stopPolling();
+      try { await sb.auth.signOut({ scope: 'global' }); } catch (_) { /* egal */ }
+      toast('Dein Account wurde gelöscht.', 'success');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+
+  /* ---------- Tabs (Registrieren / Anmelden) ---------- */
+
+  function switchTab(which) {
+    const isReg = which === 'register';
+    $('tab-register').classList.toggle('tab-active', isReg);
+    $('tab-login').classList.toggle('tab-active', !isReg);
+    $('tab-register').setAttribute('aria-selected', String(isReg));
+    $('tab-login').setAttribute('aria-selected', String(!isReg));
+    $('register-form').classList.toggle('hidden', !isReg);
+    $('login-form').classList.toggle('hidden', isReg);
+    setFormError('register', '');
+    setFormError('login', '');
+  }
+
+  /* ================= Dashboard ================= */
+
+  async function enterDashboard(user) {
+    if (state.user && state.user.id === user.id) return; // bereits eingeloggt
+    state.user = user;
+    state.editing = false;
+    state.selectedProfile = null;
+    showView('app');
+
+    // Profil laden (Fallback: Metadaten aus dem Auth-Konto)
+    let profile = null;
+    try {
+      const res = await sb.from('profiles')
+        .select('display_name, normalized_name').eq('id', user.id).maybeSingle();
+      profile = res.data;
+    } catch (err) { /* Fallback unten */ }
+    const meta = user.user_metadata || {};
+    const fallbackName = `${meta.first_name || ''} ${meta.last_name || ''}`.trim();
+    state.profile = profile || { display_name: fallbackName || 'Hallo', normalized_name: normalizeName(fallbackName) };
+
+    $('greeting-name').textContent = firstNameOf(state.profile.display_name) || state.profile.display_name;
+    $('user-chip').textContent = state.profile.display_name;
+
+    await refreshCrush();
+    await checkMatch(true);
+    startPolling();
+  }
+
+  function leaveDashboard() {
+    stopPolling();
+    state.user = null;
+    state.profile = null;
+    state.crush = null;
+    state.crushProfile = null;
+    state.match = null;
+    state.editing = false;
+    state.selectedProfile = null;
+
+    ['reg-first', 'reg-last', 'reg-password', 'reg-password2',
+     'login-first', 'login-last', 'login-password', 'crush-input',
+     'pw-new', 'pw-new2'].forEach((id) => { $(id).value = ''; });
+    setFormError('register', '');
+    setFormError('login', '');
+    hideSuggestions();
+    closeDeleteModal();
+    render();
+    showView('auth');
+  }
+
+  /* ---------- Rendern ---------- */
+
+  function render() {
+    renderMatchBanner();
+    renderCrushCard();
+  }
+
+  function renderMatchBanner() {
+    const banner = $('match-banner');
+    if (!state.match) {
+      banner.classList.add('hidden');
+      return;
+    }
+    $('match-name').textContent = state.match.matched_name;
+    $('match-since').textContent = state.match.matched_since
+      ? 'Gegenseitig seit dem ' + fmtDateLong(state.match.matched_since)
+      : '';
+    banner.classList.remove('hidden');
+  }
+
+  function renderCrushCard() {
+    const hasCrush = !!state.crush;
+    const showForm = !hasCrush || state.editing;
+
+    $('crush-status-area').classList.toggle('hidden', !hasCrush || state.editing);
+    $('crush-form-area').classList.toggle('hidden', !showForm);
+    $('crush-cancel-btn').classList.toggle('hidden', !state.editing);
+    $('crush-save-btn').textContent = state.editing ? 'Änderung speichern' : 'Auswahl speichern';
+
+    if (hasCrush) {
+      const name = state.crush.crush_display_name;
+      $('crush-status-name').textContent = name;
+      $('crush-status-initial').textContent = (name.trim()[0] || '?').toUpperCase();
+      $('crush-status-date').textContent = state.crush.created_at
+        ? 'gespeichert am ' + fmtDate(state.crush.created_at) : '';
+      const badge = $('crush-status-badge');
+      if (state.crushProfile) {
+        badge.textContent = 'Bereits registriert';
+        badge.className = 'badge-ok shrink-0';
+      } else {
+        badge.textContent = 'Noch nicht registriert';
+        badge.className = 'badge-off shrink-0';
+      }
+
+      // Hinweis: Warten auf den anderen (außer es gibt schon ein Match)
+      const hint = $('crush-wait-hint');
+      if (state.match) {
+        hint.classList.add('hidden');
+      } else {
+        hint.classList.remove('hidden');
+        const vorname = firstNameOf(name);
+        hint.textContent = state.crushProfile
+          ? 'Warten auf ' + vorname + ': Sobald ' + vorname + ' dich ebenfalls auswählt, erscheint oben automatisch euer Match.'
+          : name + ' ist noch nicht bei Crushly registriert. Registriert sich die Person später und wählt dich aus, erscheint euer Match automatisch.';
+      }
+    }
+  }
+
+  /* ---------- Crush laden / speichern / löschen ---------- */
+
+  async function refreshCrush() {
+    if (!state.user) return;
+    const { data, error } = await sb.from('crushes')
+      .select('crush_display_name, crush_normalized_name, crush_user_id, created_at')
+      .eq('user_id', state.user.id).maybeSingle();
+    if (error) { toast(friendlyError(error), 'error'); return; }
+    state.crush = data || null;
+    state.crushProfile = null;
+
+    if (state.crush) {
+      // Ist die Person inzwischen registriert? (Badge aktuell halten)
+      const { data: p } = await sb.from('profiles')
+        .select('id, display_name, normalized_name')
+        .eq('normalized_name', state.crush.crush_normalized_name).maybeSingle();
+      state.crushProfile = p || null;
+    }
+    render();
+  }
+
+  async function saveCrush() {
+    if (!state.user) return;
+    const raw = $('crush-input').value;
+    const norm = normalizeName(raw);
+    const words = norm ? norm.split(' ') : [];
+
+    if (words.length < 2 || words.some((w) => w.length < 2)) {
+      toast('Bitte gib Vor- und Nachnamen ein (z. B. „Alex Beispiel“).', 'error');
+      return;
+    }
+    if (state.profile && norm === state.profile.normalized_name) {
+      toast('Du kannst dich nicht selbst auswählen.', 'error');
+      return;
+    }
+    if (state.crush && norm === state.crush.crush_normalized_name) {
+      toast('Diese Person ist bereits deine aktuelle Auswahl.');
+      return;
+    }
+
+    const btn = $('crush-save-btn');
+    setLoading(btn, true, 'Speichern …');
+    try {
+      // Falls der getippte Name exakt einem registrierten Profil entspricht,
+      // übernehmen wir dessen Anzeige-Namen und ID.
+      let target = state.selectedProfile;
+      if (!target) {
+        const { data: p } = await sb.from('profiles')
+          .select('id, display_name, normalized_name').eq('normalized_name', norm).maybeSingle();
+        target = p || null;
+      }
+
+      const { error } = await sb.from('crushes').upsert({
+        user_id: state.user.id,
+        crush_display_name: target ? target.display_name : raw.trim().replace(/\s+/g, ' '),
+        crush_normalized_name: norm,
+        crush_user_id: target ? target.id : null,
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+
+      if (error) return toast(friendlyError(error), 'error');
+
+      state.editing = false;
+      state.selectedProfile = null;
+      $('crush-input').value = '';
+      hideSuggestions();
+      await refreshCrush();
+      await checkMatch(false);
+      toast('Gespeichert. Deine Auswahl bleibt privat.', 'success');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  async function deleteCrush() {
+    if (!state.user || !state.crush) return;
+    const btn = $('crush-delete-btn');
+    setLoading(btn, true, 'Löschen …');
+    try {
+      const { error } = await sb.from('crushes').delete().eq('user_id', state.user.id);
+      if (error) return toast(friendlyError(error), 'error');
+      state.editing = false;
+      $('crush-input').value = '';
+      await refreshCrush();
+      await checkMatch(true);
+      toast('Deine Auswahl wurde entfernt.');
+    } catch (err) {
+      toast(friendlyError(err), 'error');
+    } finally {
+      setLoading(btn, false);
+    }
+  }
+
+  function startEdit() {
+    if (!state.crush) return;
+    state.editing = true;
+    state.selectedProfile = state.crushProfile;
+    $('crush-input').value = state.crush.crush_display_name;
+    render();
+    $('crush-input').focus();
+  }
+
+  function cancelEdit() {
+    state.editing = false;
+    state.selectedProfile = null;
+    $('crush-input').value = '';
+    hideSuggestions();
+    render();
+  }
+
+  /* ---------- Live-Suche (Autocomplete) ---------- */
+
+  function hideSuggestions() {
+    const ul = $('crush-suggestions');
+    ul.classList.add('hidden');
+    ul.innerHTML = '';
+    state.suggestions = [];
+    state.highlightIdx = -1;
+  }
+
+  function renderSuggestions(list) {
+    const ul = $('crush-suggestions');
+    state.suggestions = list;
+    state.highlightIdx = -1;
+    if (!list.length) { hideSuggestions(); return; }
+
+    ul.innerHTML = '';
+    list.forEach((p) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.className = 'flex items-center gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-indigo-50';
+      li.innerHTML =
+        '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white font-semibold text-xs">'
+        + esc((p.display_name.trim()[0] || '?').toUpperCase()) + '</span>'
+        + '<span class="flex-1 font-medium text-slate-800 truncate">' + esc(p.display_name) + '</span>'
+        + '<span class="badge-ok shrink-0">Bereits registriert</span>';
+      // mousedown statt click: verhindert, dass das Feld den Fokus verliert
+      li.addEventListener('mousedown', (ev) => { ev.preventDefault(); pickSuggestion(p); });
+      ul.appendChild(li);
+    });
+    ul.classList.remove('hidden');
+  }
+
+  function pickSuggestion(p) {
+    $('crush-input').value = p.display_name;
+    state.selectedProfile = p;
+    hideSuggestions();
+  }
+
+  async function searchProfiles() {
+    if (!state.user) return;
+    const raw = $('crush-input').value;
+    const q = normalizeName(raw).replace(/[%_\\]/g, '');
+    if (q.length < 2) { hideSuggestions(); return; }
+
+    const { data, error } = await sb.from('profiles')
+      .select('id, display_name, normalized_name')
+      .ilike('normalized_name', '%' + q + '%')
+      .neq('id', state.user.id)
+      .order('display_name')
+      .limit(8);
+
+    if (error) return; // stiller Fehlschlag bei der Vorschlagssuche
+    if (normalizeName($('crush-input').value).replace(/[%_\\]/g, '') !== q) return; // veraltet
+    renderSuggestions(data || []);
+  }
+
+  function updateHighlight() {
+    const ul = $('crush-suggestions');
+    Array.from(ul.children).forEach((li, i) => {
+      li.classList.toggle('bg-indigo-50', i === state.highlightIdx);
+    });
+    const active = ul.children[state.highlightIdx];
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function onInputKeydown(e) {
+    const ul = $('crush-suggestions');
+    const open = !ul.classList.contains('hidden') && state.suggestions.length > 0;
+
+    if (!open) {
+      if (e.key === 'Enter') { e.preventDefault(); saveCrush(); }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      state.highlightIdx = (state.highlightIdx + 1) % state.suggestions.length;
+      updateHighlight();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      state.highlightIdx = (state.highlightIdx - 1 + state.suggestions.length) % state.suggestions.length;
+      updateHighlight();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pickSuggestion(state.suggestions[Math.max(state.highlightIdx, 0)]);
+    } else if (e.key === 'Escape') {
+      hideSuggestions();
+    }
+  }
+
+  /* ---------- Match-Abgleich (RPC) ---------- */
+
+  async function checkMatch(isInitial) {
+    if (!state.user) return;
+    const { data, error } = await sb.rpc('get_my_match');
+    if (error) { console.warn('get_my_match:', error); return; }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    state.match = row && row.matched_name ? row : null;
+    render();
+  }
+
+  /* ---------- Aktualisierung im Hintergrund ---------- */
+
+  function startPolling() {
+    stopPolling();
+    state.pollTimer = setInterval(() => {
+      if (state.user && !document.hidden) checkMatch(false);
+    }, 20000);
+    document.addEventListener('visibilitychange', onVisibility);
+  }
+
+  function stopPolling() {
+    if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
+    document.removeEventListener('visibilitychange', onVisibility);
+  }
+
+  function onVisibility() {
+    if (!document.hidden && state.user) checkMatch(false);
+  }
+
+  /* ================= Start ================= */
+
+  function init() {
+    // Noch nicht konfiguriert? → Hinweis anzeigen, App ruhen lassen.
+    if (SUPABASE_URL.indexOf('YOUR_SUPABASE') !== -1 || SUPABASE_ANON_KEY.indexOf('YOUR_SUPABASE') !== -1) {
+      $('setup-notice').classList.remove('hidden');
+      return;
+    }
+    if (!window.supabase) {
+      $('setup-notice').classList.remove('hidden');
+      $('setup-notice').innerHTML = '<p class="font-bold text-base mb-1">Supabase-SDK konnte nicht geladen werden</p>'
+        + '<p>Prüfe deine Internetverbindung – das SDK wird per CDN von jsdelivr.net geladen.</p>';
+      return;
+    }
+
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- Ereignisse verbinden ---
+    $('register-form').addEventListener('submit', handleRegister);
+    $('login-form').addEventListener('submit', handleLogin);
+    $('logout-btn').addEventListener('click', handleLogout);
+    $('tab-register').addEventListener('click', () => switchTab('register'));
+    $('tab-login').addEventListener('click', () => switchTab('login'));
+    $('crush-save-btn').addEventListener('click', saveCrush);
+    $('crush-delete-btn').addEventListener('click', deleteCrush);
+    $('crush-change-btn').addEventListener('click', startEdit);
+    $('crush-cancel-btn').addEventListener('click', cancelEdit);
+
+    // Account: Passwort ändern + Account löschen
+    $('pw-save-btn').addEventListener('click', handleChangePassword);
+    $('account-delete-btn').addEventListener('click', openDeleteModal);
+    $('delete-cancel-btn').addEventListener('click', closeDeleteModal);
+    $('delete-modal-backdrop').addEventListener('click', closeDeleteModal);
+    $('delete-confirm-btn').addEventListener('click', handleDeleteAccount);
+    $('delete-confirm-input').addEventListener('input', (e) => {
+      $('delete-confirm-btn').disabled = e.target.value.trim() !== 'LÖSCHEN';
+    });
+    $('delete-confirm-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.value.trim() === 'LÖSCHEN') handleDeleteAccount();
+      if (e.key === 'Escape') closeDeleteModal();
+    });
+
+    const input = $('crush-input');
+    input.addEventListener('input', () => {
+      state.selectedProfile = null; // freie Eingabe → Profil-Verknüpfung zurücksetzen
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = setTimeout(searchProfiles, 250);
+    });
+    input.addEventListener('keydown', onInputKeydown);
+    input.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+
+    // --- Auth-Zustand beobachten ---
+    sb.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && session.user) {
+        enterDashboard(session.user);
+      } else if (event === 'SIGNED_OUT') {
+        leaveDashboard();
+      }
+    });
+
+    // --- Bestehende Sitzung wiederherstellen ---
+    sb.auth.getSession().then(({ data }) => {
+      if (data && data.session && data.session.user) enterDashboard(data.session.user);
+      else showView('auth');
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+
+</body>
+</html>
